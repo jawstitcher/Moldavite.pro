@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Moldavite.pro - A Fragment of the Cosmos</title>
+    <meta name="description" content="Discover Moldormr. Interact with a tektite reformed as an impactful start.">
+    <!-- Google Fonts for an ancient, ornate look mixed with modern readability -->
+    <link
+        href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@400;700;900&family=Space+Grotesk:wght@300;400;500;600;700&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <!-- Import Three.js -->
+    <script type="importmap">
+        {
+          "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+          }
+        }
+    </script>
+</head>
+
+<body>
+    <div class="vanta-background"></div>
+    <div class="cave-environment"></div>
+
+    <!-- Cinematic Overlay instead of clunky borders -->
+    <div class="cinematic-overlay">
+        <div class="vignette"></div>
+        <div class="hud-elements">
+            <!-- Subtle scanning line -->
+            <div class="scan-line"></div>
+            <div class="hud-corner tl"></div>
+            <div class="hud-corner tr"></div>
+            <div class="hud-corner bl"></div>
+            <div class="hud-corner br"></div>
+        </div>
+    </div>
+
+    <!-- 3D Canvas Container -->
+    <div id="canvas-container"></div>
+
+    <!-- Interface -->
+    <main class="interaction-layer">
+        <div class="glass-panel" id="tablet-container">
+            <p id="moldormr-text" class="alien-text"></p>
+        </div>
+
+        <div class="user-interaction hidden" id="user-input-section">
+            <div class="dialogue-box">
+                <p class="moldormr-greeting" id="greeting-text"></p>
+            </div>
+            <div class="input-wrapper">
+                <input type="text" id="user-response" placeholder="Offer your energy..." autocomplete="off">
+                <button id="send-btn">
+                    <span class="btn-text">Merge</span>
+                </button>
+            </div>
+        </div>
+    </main>
+
+    <script type="module" src="scene.js"></script>
+    <script type="module" src="main.js"></script>
+</body>
+
+</html>
