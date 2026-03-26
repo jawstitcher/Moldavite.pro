@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Moldavite.pro - A Fragment of the Cosmos</title>
-    <meta name="description" content="Discover Moldormr. Interact with a tektite reformed as an impactful start.">
+    <meta name="description" content="Discover Moldavite. An immersive 3D dodging game.">
     <!-- Google Fonts for an ancient, ornate look mixed with modern readability -->
     <link
         href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@400;700;900&family=Space+Grotesk:wght@300;400;500;600;700&display=swap"
@@ -42,34 +42,29 @@
                     <rect x="67" y="32" width="26" height="26" rx="4" class="key"/>
                     <path d="M50 10 L45 17 L55 17 Z M13 45 L20 40 L20 50 Z M50 52 L45 45 L55 45 Z M87 45 L80 40 L80 50 Z" class="arrow"/>
                 </svg>
-                <span>MOVE</span>
+                <span>ARROWS TO MOVE</span>
+                <span class="highlight">HOLD CLICK TO SHRINK</span>
             </div>
             <div class="hud-corner bl"></div>
             <div class="hud-corner br"></div>
         </div>
     </div>
 
+    <!-- Intro Screen / Name your Moldavite -->
+    <div id="intro-screen" class="intro-screen">
+        <div class="glass-panel text-center">
+            <h1 class="title-text">A Fragment of the Cosmos</h1>
+            <p class="subtitle-text">Name your Tektite</p>
+            <div class="input-wrapper name-input">
+                <input type="text" id="moldavite-name" placeholder="Enter a name..." autocomplete="off">
+                <button id="suggest-btn" title="Suggest Name">✧</button>
+            </div>
+            <button id="awaken-btn" class="primary-btn">Awaken</button>
+        </div>
+    </div>
+
     <!-- 3D Canvas Container -->
     <div id="canvas-container"></div>
-
-    <!-- Interface -->
-    <main class="interaction-layer">
-        <div class="glass-panel" id="tablet-container">
-            <p id="moldormr-text" class="alien-text"></p>
-        </div>
-
-        <div class="user-interaction hidden" id="user-input-section">
-            <div class="dialogue-box">
-                <p class="moldormr-greeting" id="greeting-text"></p>
-            </div>
-            <div class="input-wrapper">
-                <input type="text" id="user-response" placeholder="Offer your energy..." autocomplete="off">
-                <button id="send-btn">
-                    <span class="btn-text">Merge</span>
-                </button>
-            </div>
-        </div>
-    </main>
 
     <script type="module" src="scene.js"></script>
     <script type="module" src="main.js"></script>
