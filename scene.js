@@ -1,26 +1,36 @@
 import * as THREE from 'three';
 
-let camera, scene, renderer, moldaviteMesh, light1;
+let camera, scene, renderer, moldaviteMesh, gridMesh;
+let light1, light2, ambientLight;
 const clock = new THREE.Clock(); // for smooth timing
 
 // Game state
 let isGameStarted = false;
 let isShrinking = false;
-let targetScale = 1.0;
 let currentScale = 1.0;
-let distanceScore = 0;
-let speed = 25.0; // Units per second
+let transitionScale = 0.0; // 0 = spikey, 1 = smooth
+let dimensionCount = 1;
+let speed = 45.0; // Units per second
 
-// Obstacles
-const obstacles = [];
+// Color Dimensions Checkpoints
+const dimensions = [
+    { bg: 0x0a110d, l1: 0x39ff14, l2: 0xaaffea, grid: 0x14ff64, rock: 0x116633, ems: 0x052211 }, // Green (Base)
+    { bg: 0x110522, l1: 0xff1493, l2: 0x00ffff, grid: 0xff00ff, rock: 0x4B0082, ems: 0x1a0033 }, // Synthwave Purple
+    { bg: 0x220505, l1: 0xff4500, l2: 0xff8c00, grid: 0xff2400, rock: 0x800000, ems: 0x3d0000 }, // Blood Moon
+    { bg: 0x051a22, l1: 0x00ced1, l2: 0x1e90ff, grid: 0x00bfff, rock: 0x00008b, ems: 0x00003d }, // Abyssal Blue
+    { bg: 0x221a05, l1: 0xffd700, l2: 0xffffff, grid: 0xdaa520, rock: 0xb8860b, ems: 0x4a3600 }, // Solar Gold
+];
+
+let currentDim = { ...dimensions[0] };
+
+// Wormholes
+const wormholes = [];
 const obstacleGroup = new THREE.Group();
 
 // Keyboard 
 const keys = {
-    ArrowUp: false,
-    ArrowDown: false,
-    ArrowLeft: false,
-    ArrowRight: false
+    ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false,
+    w: false, a: false, s: false, d: false
 };
 const rockPos = new THREE.Vector3(0, 0, 0);
 const rockVel = new THREE.Vector3(0, 0, 0);
@@ -32,7 +42,7 @@ function init() {
     const container = document.getElementById('canvas-container');
 
     scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(0x0a110d, 0.04);
+    scene.fog = new THREE.FogExp2(currentDim.bg, 0.035);
     scene.add(obstacleGroup);
 
     camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
@@ -42,20 +52,17 @@ function init() {
     // MOLDAVITE MESH
     const geometry = new THREE.SphereGeometry(1.2, 64, 64);
     
-    // Add noise to geometry to keep it looking like a tektite
+    // Store original positions for Morphing (Spikey to Smooth)
     const posAttribute = geometry.attributes.position;
+    const originalPositions = [];
     for (let i = 0; i < posAttribute.count; i++) {
-        const v = new THREE.Vector3().fromBufferAttribute(posAttribute, i);
-        // Simple noise displacement radially
-        const noise = Math.sin(v.x * 5) * Math.cos(v.y * 5) * Math.sin(v.z * 5) * 0.1;
-        v.add(v.clone().normalize().multiplyScalar(noise));
-        posAttribute.setXYZ(i, v.x, v.y, v.z);
+        originalPositions.push(new THREE.Vector3().fromBufferAttribute(posAttribute, i));
     }
-    geometry.computeVertexNormals();
+    geometry.userData.originalPositions = originalPositions;
 
     const material = new THREE.MeshPhysicalMaterial({
-        color: 0x116633,
-        emissive: 0x052211,
+        color: currentDim.rock,
+        emissive: currentDim.ems,
         roughness: 0.25,
         transmission: 0.8,
         thickness: 2.0,
@@ -65,15 +72,36 @@ function init() {
     moldaviteMesh = new THREE.Mesh(geometry, material);
     scene.add(moldaviteMesh);
 
+    // GRAVITY GRID (Wormhole distortion field)
+    const gridGeo = new THREE.PlaneGeometry(80, 100, 40, 40);
+    gridGeo.rotateX(-Math.PI / 2);
+    const gridOriginalPositions = [];
+    const gridAttr = gridGeo.attributes.position;
+    for (let i = 0; i < gridAttr.count; i++) {
+        gridOriginalPositions.push(new THREE.Vector3().fromBufferAttribute(gridAttr, i));
+    }
+    gridGeo.userData.originalPositions = gridOriginalPositions;
+    
+    const gridMat = new THREE.MeshBasicMaterial({
+        color: currentDim.grid,
+        wireframe: true,
+        transparent: true,
+        opacity: 0.15,
+        blending: THREE.AdditiveBlending
+    });
+    gridMesh = new THREE.Mesh(gridGeo, gridMat);
+    gridMesh.position.y = -4;
+    scene.add(gridMesh);
+
     // LIGHTS
-    const ambientLight = new THREE.AmbientLight(0x051a0d, 1.5);
+    ambientLight = new THREE.AmbientLight(currentDim.bg, 3.5);
     scene.add(ambientLight);
 
-    light1 = new THREE.DirectionalLight(0x39ff14, 2.5);
+    light1 = new THREE.DirectionalLight(currentDim.l1, 2.5);
     light1.position.set(2, 2, 2);
     scene.add(light1);
 
-    const light2 = new THREE.DirectionalLight(0xaaffea, 1.5);
+    light2 = new THREE.DirectionalLight(currentDim.l2, 1.5);
     light2.position.set(-2, 1, -2);
     scene.add(light2);
 
@@ -89,14 +117,23 @@ function init() {
     // Controls
     window.addEventListener('keydown', (e) => {
         if (e.key === ' ' && isGameStarted) {
-            e.preventDefault(); // Stop page scrolling
+            e.preventDefault();
             isShrinking = true;
         }
         if (keys.hasOwnProperty(e.key)) keys[e.key] = true;
+        if(e.key.toLowerCase() === 'w') keys.w = true;
+        if(e.key.toLowerCase() === 'a') keys.a = true;
+        if(e.key.toLowerCase() === 's') keys.s = true;
+        if(e.key.toLowerCase() === 'd') keys.d = true;
     });
+    
     window.addEventListener('keyup', (e) => {
         if (e.key === ' ') isShrinking = false;
         if (keys.hasOwnProperty(e.key)) keys[e.key] = false;
+        if(e.key.toLowerCase() === 'w') keys.w = false;
+        if(e.key.toLowerCase() === 'a') keys.a = false;
+        if(e.key.toLowerCase() === 's') keys.s = false;
+        if(e.key.toLowerCase() === 'd') keys.d = false;
     });
     
     window.addEventListener('mousedown', () => { if (isGameStarted) isShrinking = true; });
@@ -108,14 +145,11 @@ function init() {
     });
     window.addEventListener('touchend', () => isShrinking = false);
 
-    // Listen for Awaken event from main.js
     window.addEventListener('awakenMoldavite', (e) => {
         isGameStarted = true;
-        distanceScore = 0;
-        console.log("Moldavite Awakened: ", e.detail.name);
-        
-        // Spawn obstacles exactly every 800ms
-        setInterval(spawnObstaclePair, 800); 
+        dimensionCount = 1;
+        updateScoreUI();
+        setInterval(spawnWormhole, 2800); 
     });
 }
 
@@ -125,69 +159,100 @@ function onWindowResize() {
     renderer.setSize(window.innerWidth, window.innerHeight);
 }
 
-function createPillar(isTop, xPos, startZ) {
-    const height = 20 + Math.random() * 15;
-    const radius = 2.0 + Math.random() * 2.5;
-    const geo = new THREE.ConeGeometry(radius, height, 8);
-    
-    // Add jaggedness to cone
-    const posAttr = geo.attributes.position;
-    for (let i = 0; i < posAttr.count; i++) {
-        if (posAttr.getY(i) === height / 2) continue; // Keep the tip sharp
-        const v = new THREE.Vector3().fromBufferAttribute(posAttr, i);
-        const noise = (Math.random() - 0.5) * 0.8;
-        v.x += noise;
-        v.z += noise;
-        posAttr.setXYZ(i, v.x, v.y, v.z);
-    }
-    geo.computeVertexNormals();
-
-    const mat = new THREE.MeshStandardMaterial({ 
-        color: 0x030805, 
-        roughness: 0.9,
-        flatShading: true
-    });
-    const mesh = new THREE.Mesh(geo, mat);
-    
-    if (isTop) {
-        mesh.rotation.x = Math.PI;
-        // Base is now up, tip is down
-        mesh.position.set(xPos, height/2 + 1.5, startZ); 
-    } else {
-        mesh.position.set(xPos, -height/2 - 1.5, startZ);
-    }
-    
-    mesh.rotation.z += (Math.random() - 0.5) * 0.2;
-    mesh.rotation.x += (Math.random() - 0.5) * 0.2;
-
-    return mesh;
+// Procedural noise for jagged tektite mapping
+function complexNoise(x, y, z) {
+    let n = Math.sin(x * 4.1) * Math.cos(y * 3.8) * Math.sin(z * 4.5);
+    n += 0.5 * Math.sin(x * 8.2) * Math.cos(y * 7.5) * Math.sin(z * 9.1);
+    return n;
 }
 
-function spawnObstaclePair() {
+function spawnWormhole() {
     if (!isGameStarted) return;
+    
+    const startZ = -120;
+    
+    // Create a glowing wormhole Torus
+    const radius = 3.5; 
+    const tube = 0.25;
+    const geo = new THREE.TorusGeometry(radius, tube, 16, 64);
+    
+    const mat = new THREE.MeshPhysicalMaterial({ 
+        color: currentDim.l1,
+        emissive: currentDim.l1,
+        emissiveIntensity: 2.5,
+        transparent: true,
+        opacity: 0.9,
+    });
+    
+    const mesh = new THREE.Mesh(geo, mat);
+    
+    // Procedural random positions targeting play area
+    mesh.position.set((Math.random() - 0.5) * 14, (Math.random() - 0.5) * 8, startZ);
+    mesh.rotation.x = (Math.random() - 0.5) * 0.4;
+    mesh.rotation.y = (Math.random() - 0.5) * 0.4;
+    
+    mesh.userData = { passed: false };
+    
+    obstacleGroup.add(mesh);
+    wormholes.push(mesh);
+}
 
-    const startZ = -80;
-    // Spawn across 3 lanes (-5, 0, 5)
-    for (let i = -1; i <= 1; i++) {
-        const xPos = i * 5; 
-        const type = Math.floor(Math.random() * 4); // 0=none, 1=top, 2=bot, 3=both
+function shiftDimension() {
+    dimensionCount++;
+    updateScoreUI();
+    
+    // Flash effect for piercing the dimension
+    const flash = document.createElement('div');
+    flash.style.position = 'fixed';
+    flash.style.top = '0'; flash.style.left = '0';
+    flash.style.width = '100vw'; flash.style.height = '100vh';
+    flash.style.backgroundColor = '#ffffff';
+    flash.style.zIndex = '100';
+    flash.style.opacity = '1';
+    flash.style.transition = 'opacity 0.8s ease-out';
+    flash.style.pointerEvents = 'none';
+    document.body.appendChild(flash);
+    
+    setTimeout(() => { flash.style.opacity = '0'; }, 50);
+    setTimeout(() => { flash.remove(); }, 850);
+    
+    // Shift targets to a random dimension palette
+    const nextDim = dimensions[Math.floor(Math.random() * dimensions.length)];
+    
+    ambientLight.color.setHex(nextDim.bg);
+    scene.fog.color.setHex(nextDim.bg);
+    light1.color.setHex(nextDim.l1);
+    light2.color.setHex(nextDim.l2);
+    gridMesh.material.color.setHex(nextDim.grid);
+    moldaviteMesh.material.color.setHex(nextDim.rock);
+    
+    currentDim = nextDim;
+}
+
+function updateScoreUI() {
+    let scoreEl = document.getElementById('score-display');
+    if (!scoreEl) {
+        scoreEl = document.createElement('div');
+        scoreEl.id = 'score-display';
+        scoreEl.style.position = 'absolute';
+        scoreEl.style.top = '1.5rem';
+        scoreEl.style.left = '1.5rem';
+        scoreEl.style.color = '#ffffff';
+        scoreEl.style.fontFamily = "'Space Grotesk', sans-serif";
+        scoreEl.style.fontSize = '1.2rem';
+        scoreEl.style.letterSpacing = '2px';
+        scoreEl.style.zIndex = '20';
+        scoreEl.style.textShadow = '0 0 10px rgba(255, 255, 255, 0.8)';
         
-        // Ensure gap is sometimes tight vertically
-        const tightGap = Math.random() < 0.6;
-        
-        if (type === 1 || type === 3) {
-            let obsTop = createPillar(true, xPos, startZ);
-            if (tightGap) obsTop.position.y -= 2.0;
-            obstacleGroup.add(obsTop);
-            obstacles.push(obsTop);
-        }
-        if (type === 2 || type === 3) {
-            let obsBot = createPillar(false, xPos, startZ);
-            if (tightGap) obsBot.position.y += 2.0;
-            obstacleGroup.add(obsBot);
-            obstacles.push(obsBot);
-        }
+        const hud = document.querySelector('.hud-elements');
+        if(hud) hud.appendChild(scoreEl);
     }
+    scoreEl.innerText = `DIMENSION O-${dimensionCount}`;
+    
+    // Give it a subtle pulse animation for achieving a new dimension
+    scoreEl.style.transform = 'scale(1.2)';
+    setTimeout(() => scoreEl.style.transform = 'scale(1.0)', 300);
+    scoreEl.style.transition = 'transform 0.3s ease';
 }
 
 function gameOver() {
@@ -195,123 +260,166 @@ function gameOver() {
     isShrinking = false;
     light1.color.setHex(0xff0000); // Red flash
     
-    // Shake camera effect
+    // Screen Shake Extravaganza
     const originalPos = camera.position.clone();
     let shakes = 0;
     const shakeInterval = setInterval(() => {
-        camera.position.x = originalPos.x + (Math.random() - 0.5) * 0.7;
-        camera.position.y = originalPos.y + (Math.random() - 0.5) * 0.7;
+        camera.position.x = originalPos.x + (Math.random() - 0.5) * 0.9;
+        camera.position.y = originalPos.y + (Math.random() - 0.5) * 0.9;
         shakes++;
-        if (shakes > 10) {
+        if (shakes > 12) {
             clearInterval(shakeInterval);
             camera.position.copy(originalPos);
         }
-    }, 50);
+    }, 40);
 
     setTimeout(() => {
-        obstacles.forEach(o => obstacleGroup.remove(o));
-        obstacles.length = 0;
-        distanceScore = 0;
+        wormholes.forEach(o => obstacleGroup.remove(o));
+        wormholes.length = 0;
+        dimensionCount = 1;
+        updateScoreUI();
         rockPos.set(0,0,0);
         rockVel.set(0,0,0);
-        light1.color.setHex(0x39ff14);
+        
+        // Reset colors to default green
+        currentDim = { ...dimensions[0] };
+        ambientLight.color.setHex(currentDim.bg);
+        scene.fog.color.setHex(currentDim.bg);
+        light1.color.setHex(currentDim.l1);
+        light2.color.setHex(currentDim.l2);
+        gridMesh.material.color.setHex(currentDim.grid);
+        moldaviteMesh.material.color.setHex(currentDim.rock);
+        
         isGameStarted = true;
-    }, 1500);
+    }, 1800);
 }
 
 function animate() {
     requestAnimationFrame(animate);
-
     const time = clock.getElapsedTime();
 
     if (moldaviteMesh) {
-        // Shrink lerp (0.35 scale when shrunk)
+        // --- Morph & Shrink Logic ---
         targetScale = isShrinking ? 0.35 : 1.0;
         currentScale += (targetScale - currentScale) * 0.15;
         moldaviteMesh.scale.set(currentScale, currentScale, currentScale);
+        
+        // transitionScale maps morphing ratio (1.0 = fully smooth, 0.0 = fully spikey)
+        const targetTransition = isShrinking ? 1.0 : 0.0;
+        transitionScale += (targetTransition - transitionScale) * 0.12;
 
-        // Keyboard Movement
-        const moveAccel = 0.02;
-        const friction = 0.88;
+        const posAttr = moldaviteMesh.geometry.attributes.position;
+        const origPos = moldaviteMesh.geometry.userData.originalPositions;
+        
+        // As player shrinks (transitionScale approaches 1.0), spike noise reduces to 0
+        const noiseAmplitude = 0.35 * (1.0 - transitionScale);
+        
+        for (let i = 0; i < posAttr.count; i++) {
+            const v = origPos[i];
+            
+            if (noiseAmplitude > 0.01) {
+                const n = complexNoise(v.x * 2.0 + time, v.y * 2.0 + time, v.z * 2.5);
+                const jagged = Math.pow(Math.abs(n), 1.5) * Math.sign(n);
+                
+                const displacementScale = 1.0 + (jagged * noiseAmplitude);
+                const displaced = v.clone().normalize().multiplyScalar(displacementScale);
+                posAttr.setXYZ(i, displaced.x, displaced.y, displaced.z);
+            } else {
+                posAttr.setXYZ(i, v.x, v.y, v.z);
+            }
+        }
+        posAttr.needsUpdate = true;
+        moldaviteMesh.geometry.computeVertexNormals();
 
-        if (keys.ArrowUp) rockVel.z -= moveAccel;
-        if (keys.ArrowDown) rockVel.z += moveAccel;
-        if (keys.ArrowLeft) rockVel.x -= moveAccel;
-        if (keys.ArrowRight) rockVel.x += moveAccel;
+        // --- XY Screen-Space Movement Logic ---
+        const moveAccel = 0.030;
+        const friction = 0.86;
+
+        if (keys.ArrowUp || keys.w) rockVel.y += moveAccel;
+        if (keys.ArrowDown || keys.s) rockVel.y -= moveAccel;
+        if (keys.ArrowLeft || keys.a) rockVel.x -= moveAccel;
+        if (keys.ArrowRight || keys.d) rockVel.x += moveAccel;
+
+        // Auto constant gravity pull towards center to make steering dynamic
+        rockVel.x -= rockPos.x * 0.0015;
+        rockVel.y -= rockPos.y * 0.0015;
 
         rockPos.add(rockVel);
         rockVel.multiplyScalar(friction);
 
-        // Bounding limits
-        const boundX = 8;
-        const boundZMin = -6;
-        const boundZMax = 3; 
+        // Movement limits
+        const boundXY = 9.5;
+        if (Math.abs(rockPos.x) > boundXY) { rockPos.x = Math.sign(rockPos.x) * boundXY; rockVel.x *= -0.5; }
+        if (Math.abs(rockPos.y) > boundXY) { rockPos.y = Math.sign(rockPos.y) * boundXY; rockVel.y *= -0.5; }
 
-        if (Math.abs(rockPos.x) > boundX) { rockPos.x = Math.sign(rockPos.x) * boundX; rockVel.x *= -0.5; }
-        if (rockPos.z > boundZMax) { rockPos.z = boundZMax; rockVel.z *= -0.5; }
-        if (rockPos.z < boundZMin) { rockPos.z = boundZMin; rockVel.z *= -0.5; }
-
-        // Position & Bobbing
         moldaviteMesh.position.x = rockPos.x;
-        moldaviteMesh.position.y = Math.sin(time * 2.5) * 0.2;
-        moldaviteMesh.position.z = rockPos.z;
+        moldaviteMesh.position.y = rockPos.y + (Math.sin(time * 3.0) * 0.15); // subtle bob
+        moldaviteMesh.position.z = 0;
 
-        // Rotation
+        // Spin it aggressively when transitioning dimensions or accelerating
         moldaviteMesh.rotation.y += 0.01;
-        moldaviteMesh.rotation.x = rockVel.z * 1.5;
+        moldaviteMesh.rotation.x = -rockVel.y * 1.5;
         moldaviteMesh.rotation.z = Math.sin(time * 0.5) * 0.2 - rockVel.x * 1.5;
 
-        // Pulse emissive when shrinking to look energized
-        moldaviteMesh.material.emissiveIntensity = isShrinking ? 0.6 + Math.sin(time * 15) * 0.3 : 0.2;
+        // Emissive drops when spikey, glows hot when shrunk and smooth
+        moldaviteMesh.material.emissiveIntensity = isShrinking ? 1.0 + Math.sin(time * 20) * 0.5 : 0.4;
+    }
+
+    if (gridMesh) {
+        // Warp grid towards player (Visible Gravity Field)
+        const gPosAttr = gridMesh.geometry.attributes.position;
+        const gOrigPos = gridMesh.geometry.userData.originalPositions;
+        
+        for (let i = 0; i < gPosAttr.count; i++) {
+            const v = gOrigPos[i];
+            
+            // Sweep Z to simulate high speed flight
+            const scrollSpeed = isGameStarted ? time * speed : time * 8.0;
+            const wrapZ = ((v.z + scrollSpeed + 50) % 100) - 50; 
+            
+            // Gravity well effect pulling aggressively upwards forming a tunnel impression
+            const dist = Math.sqrt(v.x*v.x + wrapZ*wrapZ);
+            const well = Math.max(0, 18 - dist) * 0.3;
+            
+            gPosAttr.setXYZ(i, v.x, v.y + well + Math.sin(v.x*0.5 + time*2.0)*0.5, wrapZ);
+        }
+        gPosAttr.needsUpdate = true;
     }
 
     if (isGameStarted) {
         const speedDz = speed * 0.016; 
-        distanceScore += speedDz * 0.1;
 
-        // Update Score UI
-        let scoreEl = document.getElementById('score-display');
-        if (!scoreEl) {
-            scoreEl = document.createElement('div');
-            scoreEl.id = 'score-display';
-            scoreEl.style.position = 'absolute';
-            scoreEl.style.top = '1.5rem';
-            scoreEl.style.left = '1.5rem';
-            scoreEl.style.color = 'var(--emerald-text, #39ff14)';
-            scoreEl.style.fontFamily = "'Space Grotesk', sans-serif";
-            scoreEl.style.fontSize = '1.2rem';
-            scoreEl.style.letterSpacing = '2px';
-            scoreEl.style.zIndex = '20';
-            scoreEl.style.textShadow = '0 0 10px rgba(57, 255, 20, 0.5)';
-            const hud = document.querySelector('.hud-elements');
-            if(hud) hud.appendChild(scoreEl);
-        }
-        scoreEl.innerText = `${Math.floor(distanceScore)} Ly`; // Lightyears
+        // Update Wormholes
+        for (let i = wormholes.length - 1; i >= 0; i--) {
+            const wh = wormholes[i];
+            wh.position.z += speedDz;
+            
+            // Spin the wormhole intensely
+            wh.rotation.z -= 0.08;
 
-        const moldaviteBox = new THREE.Box3().setFromObject(moldaviteMesh);
-        // Shrink the bounding box severely to be very forgiving / fun to play
-        moldaviteBox.expandByScalar(isShrinking ? -0.2 : -0.4); 
-
-        let hit = false;
-        for (let i = obstacles.length - 1; i >= 0; i--) {
-            const obs = obstacles[i];
-            obs.position.z += speedDz;
-
-            const obsBox = new THREE.Box3().setFromObject(obs);
-            obsBox.expandByScalar(-0.4); 
-
-            if (moldaviteBox.intersectsBox(obsBox)) {
-                hit = true;
+            // Wormhole logic: Pass through z = 0 safely
+            if (wh.position.z > -1 && wh.position.z < 1.5 && !wh.userData.passed) {
+                const distToCenter = Math.sqrt(
+                    Math.pow(moldaviteMesh.position.x - wh.position.x, 2) + 
+                    Math.pow(moldaviteMesh.position.y - wh.position.y, 2)
+                );
+                
+                // Collisions: 
+                // 1. Must be actively shrinking
+                // 2. Must physically fit inside the inner radius (which is approx ~2.2ish)
+                if (!isShrinking || distToCenter > 2.0) {
+                    gameOver();
+                    break;
+                } else if (Math.abs(wh.position.z) < 0.5) {
+                    wh.userData.passed = true;
+                    shiftDimension();
+                }
             }
 
-            if (obs.position.z > 12) {
-                obstacleGroup.remove(obs);
-                obstacles.splice(i, 1);
+            if (wh.position.z > 12) {
+                obstacleGroup.remove(wh);
+                wormholes.splice(i, 1);
             }
-        }
-
-        if (hit) {
-            gameOver();
         }
     }
 
