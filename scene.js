@@ -21,7 +21,7 @@ const dimensions = [
     { bg: 0x221a05, l1: 0xffd700, l2: 0xffffff, grid: 0xdaa520, rock: 0xb8860b, ems: 0x4a3600 }, // Solar Gold
 ];
 
-let currentDim = { ...dimensions[0] };
+let targetDim = { ...dimensions[0] };
 
 // Wormholes
 const wormholes = [];
@@ -42,7 +42,8 @@ function init() {
     const container = document.getElementById('canvas-container');
 
     scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(currentDim.bg, 0.035);
+    scene.background = new THREE.Color(targetDim.bg);
+    scene.fog = new THREE.FogExp2(targetDim.bg, 0.035);
     scene.add(obstacleGroup);
 
     camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
@@ -61,8 +62,8 @@ function init() {
     geometry.userData.originalPositions = originalPositions;
 
     const material = new THREE.MeshPhysicalMaterial({
-        color: currentDim.rock,
-        emissive: currentDim.ems,
+        color: targetDim.rock,
+        emissive: targetDim.ems,
         roughness: 0.25,
         transmission: 0.8,
         thickness: 2.0,
@@ -83,7 +84,7 @@ function init() {
     gridGeo.userData.originalPositions = gridOriginalPositions;
     
     const gridMat = new THREE.MeshBasicMaterial({
-        color: currentDim.grid,
+        color: targetDim.grid,
         wireframe: true,
         transparent: true,
         opacity: 0.15,
@@ -94,20 +95,21 @@ function init() {
     scene.add(gridMesh);
 
     // LIGHTS
-    ambientLight = new THREE.AmbientLight(currentDim.bg, 3.5);
+    ambientLight = new THREE.AmbientLight(targetDim.bg, 3.5);
     scene.add(ambientLight);
 
-    light1 = new THREE.DirectionalLight(currentDim.l1, 2.5);
+    light1 = new THREE.DirectionalLight(targetDim.l1, 2.5);
     light1.position.set(2, 2, 2);
     scene.add(light1);
 
-    light2 = new THREE.DirectionalLight(currentDim.l2, 1.5);
+    light2 = new THREE.DirectionalLight(targetDim.l2, 1.5);
     light2.position.set(-2, 1, -2);
     scene.add(light2);
 
-    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
     renderer.setPixelRatio(window.devicePixelRatio);
     renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setClearColor(targetDim.bg, 1);
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.2;
     container.appendChild(renderer.domElement);
@@ -177,8 +179,8 @@ function spawnWormhole() {
     const geo = new THREE.TorusGeometry(radius, tube, 16, 64);
     
     const mat = new THREE.MeshPhysicalMaterial({ 
-        color: currentDim.l1,
-        emissive: currentDim.l1,
+        color: targetDim.l1,
+        emissive: targetDim.l1,
         emissiveIntensity: 2.5,
         transparent: true,
         opacity: 0.9,
@@ -217,16 +219,7 @@ function shiftDimension() {
     setTimeout(() => { flash.remove(); }, 850);
     
     // Shift targets to a random dimension palette
-    const nextDim = dimensions[Math.floor(Math.random() * dimensions.length)];
-    
-    ambientLight.color.setHex(nextDim.bg);
-    scene.fog.color.setHex(nextDim.bg);
-    light1.color.setHex(nextDim.l1);
-    light2.color.setHex(nextDim.l2);
-    gridMesh.material.color.setHex(nextDim.grid);
-    moldaviteMesh.material.color.setHex(nextDim.rock);
-    
-    currentDim = nextDim;
+    targetDim = dimensions[Math.floor(Math.random() * dimensions.length)];
 }
 
 function updateScoreUI() {
@@ -259,6 +252,7 @@ function gameOver() {
     isGameStarted = false;
     isShrinking = false;
     light1.color.setHex(0xff0000); // Red flash
+    scene.background.setHex(0xff0000);
     
     // Screen Shake Extravaganza
     const originalPos = camera.position.clone();
@@ -281,14 +275,8 @@ function gameOver() {
         rockPos.set(0,0,0);
         rockVel.set(0,0,0);
         
-        // Reset colors to default green
-        currentDim = { ...dimensions[0] };
-        ambientLight.color.setHex(currentDim.bg);
-        scene.fog.color.setHex(currentDim.bg);
-        light1.color.setHex(currentDim.l1);
-        light2.color.setHex(currentDim.l2);
-        gridMesh.material.color.setHex(currentDim.grid);
-        moldaviteMesh.material.color.setHex(currentDim.rock);
+        // Reset colors
+        targetDim = dimensions[0];
         
         isGameStarted = true;
     }, 1800);
@@ -299,6 +287,18 @@ function animate() {
     const time = clock.getElapsedTime();
 
     if (moldaviteMesh) {
+        
+        // --- Dimension Lerp Interpolation ---
+        ambientLight.color.lerp(new THREE.Color(targetDim.bg), 0.02);
+        scene.fog.color.lerp(new THREE.Color(targetDim.bg), 0.02);
+        scene.background.lerp(new THREE.Color(targetDim.bg), 0.02);
+        renderer.setClearColor(scene.background, 1);
+        light1.color.lerp(new THREE.Color(targetDim.l1), 0.02);
+        light2.color.lerp(new THREE.Color(targetDim.l2), 0.02);
+        gridMesh.material.color.lerp(new THREE.Color(targetDim.grid), 0.02);
+        moldaviteMesh.material.color.lerp(new THREE.Color(targetDim.rock), 0.02);
+        moldaviteMesh.material.emissive.lerp(new THREE.Color(targetDim.ems), 0.02);
+
         // --- Morph & Shrink Logic ---
         targetScale = isShrinking ? 0.35 : 1.0;
         currentScale += (targetScale - currentScale) * 0.15;
@@ -361,8 +361,9 @@ function animate() {
         moldaviteMesh.rotation.x = -rockVel.y * 1.5;
         moldaviteMesh.rotation.z = Math.sin(time * 0.5) * 0.2 - rockVel.x * 1.5;
 
-        // Emissive drops when spikey, glows hot when shrunk and smooth
-        moldaviteMesh.material.emissiveIntensity = isShrinking ? 1.0 + Math.sin(time * 20) * 0.5 : 0.4;
+        // Ensure glass visibility while maintaining emissive strength
+        const baseIntensity = isShrinking ? 1.0 + Math.sin(time * 20) * 0.5 : 0.4;
+        moldaviteMesh.material.emissiveIntensity = baseIntensity;
     }
 
     if (gridMesh) {
@@ -396,6 +397,8 @@ function animate() {
             
             // Spin the wormhole intensely
             wh.rotation.z -= 0.08;
+            wh.material.color.lerp(new THREE.Color(targetDim.l1), 0.05);
+            wh.material.emissive.lerp(new THREE.Color(targetDim.l1), 0.05);
 
             // Wormhole logic: Pass through z = 0 safely
             if (wh.position.z > -1 && wh.position.z < 1.5 && !wh.userData.passed) {
